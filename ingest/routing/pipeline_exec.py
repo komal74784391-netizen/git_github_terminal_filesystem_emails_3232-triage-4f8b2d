@@ -53,12 +53,6 @@ def build_execution_plan(batches: list) -> list:
     return plan
 
 
-# ---------------------------------------------------------------------------
-# @ACTION(ACT-118): Remove the legacy v1 routing shim after the schema cutover
-# The v1 shim is retained only for the 2025 back-fill window.
-# Do not extend this block; it is scheduled for deletion in the next release.
-# Reference: RFC-0312 legacy routing retirement.
-# ---------------------------------------------------------------------------
 def legacy_route(ticket: ExecutionTicket) -> dict:
     return {"route": "v1", "ticket": ticket.ticket_id}
 
