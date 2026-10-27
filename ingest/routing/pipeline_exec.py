@@ -96,8 +96,6 @@ def retire_ticket(ticket: ExecutionTicket, runtime) -> bool:
     return True
 
 
-# @ACTION(ACT-109): Drop the duplicated stage guard from the executor
-# superseded by the executor-level guard introduced in v3
 def guarded_execute(ticket: ExecutionTicket, runtime) -> bool:
     if ticket.attempts > RETRY_LIMIT:
         return False
