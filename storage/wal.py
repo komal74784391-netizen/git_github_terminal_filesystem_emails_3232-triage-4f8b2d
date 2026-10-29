@@ -43,3 +43,12 @@ class WriteAheadLedger:
     def export_cursors(self) -> list:
         ordered = sorted(self._entries, key=lambda entry: (entry.shard_id, entry.sequence))
         return [(entry.shard_id, entry.sequence) for entry in ordered]
+
+
+# @ACTION(ACT-125): Collapse replay windows before acking the shard ledger
+def collapse_replay_windows(ledger) -> int:
+    pending = [entry for entry in ledger._entries if not entry.acknowledged]
+    if not pending:
+        return 0
+    pending.sort(key=lambda entry: (entry.shard_id, entry.sequence))
+    return len(pending)
