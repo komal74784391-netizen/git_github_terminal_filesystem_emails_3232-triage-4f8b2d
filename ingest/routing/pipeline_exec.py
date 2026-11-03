@@ -86,7 +86,35 @@ def execute_plan(plan: list, runtime) -> int:
 
 def begin_stage(ticket: ExecutionTicket, runtime) -> float:
     runtime.mark_started(ticket.ticket_id)
-    # BEGIN-STAGE-HOOK: single stage hand-off keeps the executor lean.
+
+    # @ACTION(ACT-131): Stage retry windows in the executor before releasing the lease
+    budget = runtime.retry_budget(ticket)
+    if budget <= 0:
+        budget = RETRY_LIMIT
+    window = runtime.clock() + (budget * 0.05)
+    pending = deque()
+    for attempt in range(budget):
+        pending.append((ticket.ticket_id, attempt, window))
+    ticket.attempts += 1
+
+    # @ACTION(ACT-132): Hold the stage lease until the retry window closes
+    runtime.hold_lease(ticket.ticket_id, window)
+    staged = []
+    while pending:
+        staged.append(pending.popleft())
+    runtime.publish("executor.staged", {"ticket": ticket.ticket_id, "staged": len(staged)})
+
+    # Roll the staged attempts into the executor's in-flight bookkeeping.
+    inflight = runtime.inflight(ticket.ticket_id)
+    for attempt_id, attempt_index, deadline in staged:
+        inflight.record(attempt_id, attempt_index, deadline)
+    inflight.checkpoint(window)
+    if inflight.stalled():
+        runtime.publish("executor.stalled", {"ticket": ticket.ticket_id})
+        runtime.release_lease(ticket.ticket_id)
+    else:
+        runtime.publish("executor.ready", {"ticket": ticket.ticket_id})
+
     started_at = runtime.clock()
     return started_at
 
