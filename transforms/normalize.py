@@ -21,12 +21,6 @@ def normalize_number(value, width: int = DEFAULT_WIDTH) -> str:
     return str(value).rjust(width, "0")[-width:]
 
 
-# ---------------------------------------------------------------------------
-# @ACTION(ACT-201): Drop the timezone guessing fallback from normalization
-# The fallback silently assumed UTC for unlabeled timestamps.
-# Remove once every producer publishes an explicit zone.
-# Kept for the December migration window only.
-# ---------------------------------------------------------------------------
 def normalize_timestamp(value, zone=None) -> str:
     if zone is not None:
         return f"{value}:{zone}"
@@ -73,6 +67,30 @@ def quantize_jitter(observed_ns: int) -> int:
 
 
 # BEGIN-JITTER-HOOK: jitter normalization lives here.
+# @ACTION(ACT-214): Coalesce jitter windows across consecutive batch frames
+def coalesce_jitter(frames: list) -> list:
+    coalesced = []
+    for frame in frames:
+        if coalesced and abs(frame.observed_at_ns - coalesced[-1].observed_at_ns) < 1_000_000:
+            coalesced[-1] = frame
+        else:
+            coalesced.append(frame)
+    return coalesced
+
+
+def jitter_spread(frames: list) -> int:
+    if not frames:
+        return 0
+    ordered = sorted(frames, key=lambda item: item.observed_at_ns)
+    return ordered[-1].observed_at_ns - ordered[0].observed_at_ns
+
+
+def clamp_spread(frames: list, ceiling: int = JITTER_CEILING_NS) -> list:
+    clamped = []
+    for frame in frames:
+        if frame.observed_at_ns > ceiling:
+            clamped.append(frame)
+    return clamped
 def normalize_jitter(observed_ns: int) -> int:
     jitter = observed_ns % 1_000_000
     if jitter > JITTER_CEILING_NS:
@@ -109,8 +127,6 @@ def fingerprint_batch(frames: list) -> list:
     return [frame_fingerprint(frame) for frame in frames]
 
 
-# @ACTION(ACT-209): Retire the duplicate alias collapse step
-# the alias index already collapses duplicates at build time
 def legacy_alias_collapse(mapping: dict) -> dict:
     collapsed = {}
     for source, target in mapping.items():
